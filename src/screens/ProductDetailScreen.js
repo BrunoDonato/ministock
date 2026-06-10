@@ -9,12 +9,18 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { deleteProduct } from '../services/products';
+import { useProducts } from '../contexts/ProductsContext';
 
 export default function ProductDetailScreen({ navigation, route }) {
   const { product: initial } = route.params;
-  const [product] = useState(initial);
+  const { editedProducts, removeProduct } = useProducts();
   const [deleting, setDeleting] = useState(false);
+
+  const product = editedProducts[initial.id]
+    ? { ...initial, ...editedProducts[initial.id] }
+    : initial;
 
   function handleEdit() {
     navigation.navigate('ProductForm', { product });
@@ -33,6 +39,7 @@ export default function ProductDetailScreen({ navigation, route }) {
             setDeleting(true);
             try {
               await deleteProduct(product.id);
+              removeProduct(product.id);
               navigation.goBack();
             } catch (err) {
               Alert.alert('Erro', err.message);
@@ -61,7 +68,7 @@ export default function ProductDetailScreen({ navigation, route }) {
         <View style={styles.infoRow}>
           <View style={styles.infoBox}>
             <Text style={styles.infoLabel}>Preço</Text>
-            <Text style={styles.infoValue}>R$ {product.price.toFixed(2)}</Text>
+            <Text style={styles.infoValue}>R$ {Number(product.price).toFixed(2)}</Text>
           </View>
           <View style={styles.infoBox}>
             <Text style={styles.infoLabel}>Estoque</Text>

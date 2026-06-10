@@ -2,6 +2,7 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { AuthProvider, useAuth } from './src/contexts/AuthContext';
+import { ProductsProvider } from './src/contexts/ProductsContext';
 import Loading from './src/components/Loading';
 import LoginScreen from './src/screens/LoginScreen';
 import ProductListScreen from './src/screens/ProductListScreen';
@@ -59,9 +60,11 @@ function Routes() {
 export default function App() {
   return (
     <AuthProvider>
-      <NavigationContainer>
-        <Routes />
-      </NavigationContainer>
+      <ProductsProvider>
+        <NavigationContainer>
+          <Routes />
+        </NavigationContainer>
+      </ProductsProvider>
     </AuthProvider>
   );
 }

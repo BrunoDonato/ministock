@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -6,13 +6,14 @@ import {
   TextInput,
   TouchableOpacity,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { listProducts, searchProducts, getCategories, getProductsByCategory } from '../services/products';
 import { useAuth } from '../contexts/AuthContext';
+import { useProducts } from '../contexts/ProductsContext';
 import ProductCard from '../components/ProductCard';
 import Loading from '../components/Loading';
 import EmptyState from '../components/EmptyState';
@@ -21,17 +22,28 @@ const LIMIT = 10;
 
 export default function ProductListScreen({ navigation }) {
   const { signOut, user } = useAuth();
-  const [products, setProducts] = useState([]);
+  const { localProducts, removeProduct, mergeWithEdits } = useProducts();
+  const [apiProducts, setApiProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadingCategory, setLoadingCategory] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState(null);
   const skip = useRef(0);
   const searchTimeout = useRef(null);
+
+  const mergedApi = mergeWithEdits(apiProducts);
+
+  const products = selectedCategory
+    ? [
+        ...localProducts.filter((p) => p.category === selectedCategory),
+        ...mergedApi.filter((p) => p.category === selectedCategory),
+      ]
+    : [...localProducts, ...mergedApi];
 
   async function loadCategories() {
     try {
@@ -40,17 +52,17 @@ export default function ProductListScreen({ navigation }) {
     } catch {}
   }
 
-  async function loadProducts(reset = false) {
+  async function loadApiProducts(reset = false) {
     try {
       setError(null);
       const currentSkip = reset ? 0 : skip.current;
       const data = await listProducts({ limit: LIMIT, skip: currentSkip });
 
       if (reset) {
-        setProducts(data.products);
+        setApiProducts(data.products);
         skip.current = LIMIT;
       } else {
-        setProducts((prev) => [...prev, ...data.products]);
+        setApiProducts((prev) => [...prev, ...data.products]);
         skip.current = currentSkip + LIMIT;
       }
 
@@ -61,16 +73,16 @@ export default function ProductListScreen({ navigation }) {
   }
 
   async function loadByCategory(category) {
-    setLoading(true);
+    setLoadingCategory(true);
     try {
       setError(null);
       const data = await getProductsByCategory(category);
-      setProducts(data.products);
+      setApiProducts(data.products);
       setHasMore(false);
     } catch (err) {
       setError(err.message);
     } finally {
-      setLoading(false);
+      setLoadingCategory(false);
     }
   }
 
@@ -80,23 +92,23 @@ export default function ProductListScreen({ navigation }) {
 
     if (!text.trim()) {
       setSelectedCategory(null);
-      setLoading(true);
-      await loadProducts(true);
-      setLoading(false);
+      setLoadingCategory(true);
+      await loadApiProducts(true);
+      setLoadingCategory(false);
       return;
     }
 
     searchTimeout.current = setTimeout(async () => {
-      setLoading(true);
+      setLoadingCategory(true);
       try {
         setError(null);
         const data = await searchProducts(text.trim());
-        setProducts(data.products);
+        setApiProducts(data.products);
         setHasMore(false);
       } catch (err) {
         setError(err.message);
       } finally {
-        setLoading(false);
+        setLoadingCategory(false);
       }
     }, 500);
   }
@@ -105,27 +117,23 @@ export default function ProductListScreen({ navigation }) {
     setSearch('');
     if (selectedCategory === category) {
       setSelectedCategory(null);
-      setLoading(true);
-      await loadProducts(true);
-      setLoading(false);
-      return;
+    } else {
+      setSelectedCategory(category);
     }
-    setSelectedCategory(category);
-    await loadByCategory(category);
   }
 
   async function handleRefresh() {
     setRefreshing(true);
     setSearch('');
     setSelectedCategory(null);
-    await loadProducts(true);
+    await loadApiProducts(true);
     setRefreshing(false);
   }
 
   async function handleLoadMore() {
     if (loadingMore || !hasMore || search || selectedCategory) return;
     setLoadingMore(true);
-    await loadProducts(false);
+    await loadApiProducts(false);
     setLoadingMore(false);
   }
 
@@ -144,8 +152,9 @@ export default function ProductListScreen({ navigation }) {
     useCallback(() => {
       async function init() {
         setLoading(true);
-        await Promise.all([loadCategories(), loadProducts(true)]);
+        await loadApiProducts(true);
         setLoading(false);
+        await loadCategories();
       }
       init();
     }, [])
@@ -165,6 +174,13 @@ export default function ProductListScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
+      {loadingCategory && (
+        <View style={styles.loadingBar}>
+          <ActivityIndicator size="small" color="#6C63FF" />
+          <Text style={styles.loadingBarText}>Carregando...</Text>
+        </View>
+      )}
+
       <TextInput
         style={styles.searchInput}
         placeholder="Buscar produto..."
@@ -173,28 +189,42 @@ export default function ProductListScreen({ navigation }) {
         onChangeText={handleSearch}
       />
 
-      <ScrollView
+      <FlatList
         horizontal
+        data={categories}
         showsHorizontalScrollIndicator={false}
+        keyExtractor={(item, index) => (typeof item === 'string' ? item : item.slug) || String(index)}
         contentContainerStyle={styles.categoriesContainer}
-      >
-        {categories.map((cat) => (
-          <TouchableOpacity
-            key={cat.slug}
-            style={[styles.categoryChip, selectedCategory === cat.slug && styles.categoryChipActive]}
-            onPress={() => handleSelectCategory(cat.slug)}
-          >
-            <Text style={[styles.categoryText, selectedCategory === cat.slug && styles.categoryTextActive]}>
-              {cat.name}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+        renderItem={({ item }) => {
+          const slug = typeof item === 'string' ? item : item.slug;
+          const name = typeof item === 'string' ? item : item.name;
+          return (
+            <TouchableOpacity
+              style={[
+                styles.categoryChip,
+                selectedCategory === slug && styles.categoryChipActive,
+              ]}
+              onPress={() => handleSelectCategory(slug)}
+            >
+              <Text
+                style={[
+                  styles.categoryText,
+                  selectedCategory === slug && styles.categoryTextActive,
+                ]}
+                numberOfLines={1}
+                ellipsizeMode="clip"
+              >
+                {name}
+              </Text>
+            </TouchableOpacity>
+          );
+        }}
+      />
 
       {error ? (
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity onPress={() => loadProducts(true)}>
+          <TouchableOpacity onPress={() => loadApiProducts(true)}>
             <Text style={styles.retryText}>Tentar novamente</Text>
           </TouchableOpacity>
         </View>
@@ -210,7 +240,11 @@ export default function ProductListScreen({ navigation }) {
           )}
           ListEmptyComponent={<EmptyState />}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={['#6C63FF']} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              colors={['#6C63FF']}
+            />
           }
           onEndReached={handleLoadMore}
           onEndReachedThreshold={0.3}
@@ -263,6 +297,19 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontWeight: '600',
   },
+  loadingBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 6,
+    gap: 8,
+    backgroundColor: '#EEE',
+  },
+  loadingBarText: {
+    fontSize: 12,
+    color: '#6C63FF',
+    fontWeight: '600',
+  },
   searchInput: {
     backgroundColor: '#FFF',
     margin: 16,
@@ -281,10 +328,13 @@ const styles = StyleSheet.create({
   categoryChip: {
     backgroundColor: '#FFF',
     borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     borderWidth: 1,
     borderColor: '#E0E0E0',
+    flexShrink: 0,
+    flexGrow: 0,
+    alignSelf: 'flex-start',
   },
   categoryChipActive: {
     backgroundColor: '#6C63FF',

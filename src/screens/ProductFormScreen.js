@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -9,18 +9,42 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { createProduct, updateProduct } from '../services/products';
+import { Picker } from '@react-native-picker/picker';
+import { createProduct, updateProduct, getCategories } from '../services/products';
+import { useProducts } from '../contexts/ProductsContext';
 
 export default function ProductFormScreen({ navigation, route }) {
   const { product } = route.params;
   const editing = !!product;
+  const { addProduct, updateProduct: updateLocal, localProducts } = useProducts();
+
+  const isLocalProduct = editing && localProducts.some((p) => p.id === product.id);
 
   const [title, setTitle] = useState(product?.title || '');
   const [description, setDescription] = useState(product?.description || '');
   const [price, setPrice] = useState(product?.price?.toString() || '');
   const [stock, setStock] = useState(product?.stock?.toString() || '');
   const [category, setCategory] = useState(product?.category || '');
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingCategories, setLoadingCategories] = useState(true);
+
+  useEffect(() => {
+    async function fetchCategories() {
+      try {
+        const data = await getCategories();
+        setCategories(data);
+        if (!editing && data.length > 0) {
+          const first = typeof data[0] === 'string' ? data[0] : data[0].slug;
+          setCategory(first);
+        }
+      } catch {
+      } finally {
+        setLoadingCategories(false);
+      }
+    }
+    fetchCategories();
+  }, []);
 
   async function handleSubmit() {
     if (!title.trim() || !description.trim() || !price.trim() || !stock.trim() || !category.trim()) {
@@ -44,13 +68,17 @@ export default function ProductFormScreen({ navigation, route }) {
     setLoading(true);
     try {
       if (editing) {
-        await updateProduct(product.id, payload);
-        Alert.alert('Sucesso', 'Produto atualizado com sucesso!', [
+        if (!isLocalProduct) {
+          await updateProduct(product.id, payload);
+        }
+        updateLocal(product.id, payload);
+        Alert.alert('Sucesso', 'Produto atualizado!', [
           { text: 'OK', onPress: () => navigation.goBack() },
         ]);
       } else {
-        await createProduct(payload);
-        Alert.alert('Sucesso', 'Produto cadastrado com sucesso!', [
+        const created = await createProduct(payload);
+        addProduct({ ...payload, thumbnail: created.thumbnail || '' });
+        Alert.alert('Sucesso', 'Produto cadastrado!', [
           { text: 'OK', onPress: () => navigation.goBack() },
         ]);
       }
@@ -108,14 +136,25 @@ export default function ProductFormScreen({ navigation, route }) {
       />
 
       <Text style={styles.label}>Categoria</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Ex: smartphones"
-        placeholderTextColor="#AAA"
-        value={category}
-        onChangeText={setCategory}
-        autoCapitalize="none"
-      />
+      {loadingCategories ? (
+        <ActivityIndicator color="#6C63FF" style={{ marginBottom: 16 }} />
+      ) : (
+        <View style={styles.pickerContainer}>
+          <Picker
+            selectedValue={category}
+            onValueChange={(value) => setCategory(value)}
+            style={styles.picker}
+          >
+            {categories.map((cat, index) => {
+              const slug = typeof cat === 'string' ? cat : cat.slug;
+              const name = typeof cat === 'string' ? cat : cat.name;
+              return (
+                <Picker.Item key={slug || index} label={name} value={slug} />
+              );
+            })}
+          </Picker>
+        </View>
+      )}
 
       <TouchableOpacity
         style={[styles.button, loading && styles.buttonDisabled]}
@@ -169,6 +208,17 @@ const styles = StyleSheet.create({
   textArea: {
     height: 100,
     textAlignVertical: 'top',
+  },
+  pickerContainer: {
+    backgroundColor: '#FFF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  picker: {
+    color: '#222',
   },
   button: {
     backgroundColor: '#6C63FF',

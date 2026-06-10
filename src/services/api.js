@@ -6,27 +6,23 @@ const api = axios.create({
   timeout: 10000,
 });
 
-// Interceptor de requisição — injeta o token automaticamente
 api.interceptors.request.use(
   async (config) => {
-    const token = await AsyncStorage.getItem('@ministock:token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+    try {
+      const token = await AsyncStorage.getItem('@ministock:token');
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    } catch {}
     return config;
   },
   (error) => Promise.reject(error)
 );
 
-// Interceptor de resposta — tratamento centralizado de erros
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    if (error.code === 'ECONNABORTED') {
-      return Promise.reject(new Error('Sem conexão, tente novamente'));
-    }
-
-    if (!error.response) {
+    if (error.code === 'ECONNABORTED' || !error.response) {
       return Promise.reject(new Error('Sem conexão, tente novamente'));
     }
 
