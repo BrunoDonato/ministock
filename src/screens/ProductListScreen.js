@@ -17,13 +17,15 @@ import { useProducts } from '../contexts/ProductsContext';
 import ProductCard from '../components/ProductCard';
 import Loading from '../components/Loading';
 import EmptyState from '../components/EmptyState';
+import CategoryList from '../components/CategoryList';
 
 const LIMIT = 10;
 
 export default function ProductListScreen({ navigation }) {
   const { signOut, user } = useAuth();
-  const { localProducts, removeProduct, mergeWithEdits } = useProducts();
+  const { localProducts, editedProducts, mergeWithEdits } = useProducts();
   const [apiProducts, setApiProducts] = useState([]);
+  const [categoryProducts, setCategoryProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [search, setSearch] = useState('');
@@ -36,14 +38,29 @@ export default function ProductListScreen({ navigation }) {
   const skip = useRef(0);
   const searchTimeout = useRef(null);
 
-  const mergedApi = mergeWithEdits(apiProducts);
-
-  const products = selectedCategory
-    ? [
-        ...localProducts.filter((p) => p.category === selectedCategory),
-        ...mergedApi.filter((p) => p.category === selectedCategory),
-      ]
-    : [...localProducts, ...mergedApi];
+  const mergedApi = mergeWithEdits(
+    selectedCategory ? categoryProducts : apiProducts,
+    selectedCategory
+  );
+  const localFiltered = selectedCategory
+    ? localProducts.filter((p) => p.category === selectedCategory)
+    : localProducts;
+  const editedInCategory = selectedCategory
+    ? Object.values(editedProducts)
+        .filter(
+          (e) =>
+            e.category === selectedCategory &&
+            !localProducts.some((p) => p.id === e.id)
+        )
+        .map((e) => {
+          const original =
+            apiProducts.find((p) => p.id === e.id) ||
+            categoryProducts.find((p) => p.id === e.id);
+          return original ? { ...original, ...e } : null;
+        })
+        .filter(Boolean)
+    : [];
+  const products = [...localFiltered, ...editedInCategory, ...mergedApi];
 
   async function loadCategories() {
     try {
@@ -72,26 +89,12 @@ export default function ProductListScreen({ navigation }) {
     }
   }
 
-  async function loadByCategory(category) {
-    setLoadingCategory(true);
-    try {
-      setError(null);
-      const data = await getProductsByCategory(category);
-      setApiProducts(data.products);
-      setHasMore(false);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoadingCategory(false);
-    }
-  }
-
   async function handleSearch(text) {
     setSearch(text);
+    setSelectedCategory(null);
     clearTimeout(searchTimeout.current);
 
     if (!text.trim()) {
-      setSelectedCategory(null);
       setLoadingCategory(true);
       await loadApiProducts(true);
       setLoadingCategory(false);
@@ -117,8 +120,20 @@ export default function ProductListScreen({ navigation }) {
     setSearch('');
     if (selectedCategory === category) {
       setSelectedCategory(null);
-    } else {
-      setSelectedCategory(category);
+      setCategoryProducts([]);
+      return;
+    }
+
+    setSelectedCategory(category);
+    setLoadingCategory(true);
+    try {
+      setError(null);
+      const data = await getProductsByCategory(category);
+      setCategoryProducts(data.products);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoadingCategory(false);
     }
   }
 
@@ -126,6 +141,7 @@ export default function ProductListScreen({ navigation }) {
     setRefreshing(true);
     setSearch('');
     setSelectedCategory(null);
+    setCategoryProducts([]);
     await loadApiProducts(true);
     setRefreshing(false);
   }
@@ -189,69 +205,47 @@ export default function ProductListScreen({ navigation }) {
         onChangeText={handleSearch}
       />
 
-      <FlatList
-        horizontal
-        data={categories}
-        showsHorizontalScrollIndicator={false}
-        keyExtractor={(item, index) => (typeof item === 'string' ? item : item.slug) || String(index)}
-        contentContainerStyle={styles.categoriesContainer}
-        renderItem={({ item }) => {
-          const slug = typeof item === 'string' ? item : item.slug;
-          const name = typeof item === 'string' ? item : item.name;
-          return (
-            <TouchableOpacity
-              style={[
-                styles.categoryChip,
-                selectedCategory === slug && styles.categoryChipActive,
-              ]}
-              onPress={() => handleSelectCategory(slug)}
-            >
-              <Text
-                style={[
-                  styles.categoryText,
-                  selectedCategory === slug && styles.categoryTextActive,
-                ]}
-                numberOfLines={1}
-                ellipsizeMode="clip"
-              >
-                {name}
-              </Text>
-            </TouchableOpacity>
-          );
-        }}
-      />
-
-      {error ? (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity onPress={() => loadApiProducts(true)}>
-            <Text style={styles.retryText}>Tentar novamente</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <FlatList
-          data={products}
-          keyExtractor={(item) => String(item.id)}
-          renderItem={({ item }) => (
-            <ProductCard
-              product={item}
-              onPress={() => navigation.navigate('ProductDetail', { product: item })}
-            />
-          )}
-          ListEmptyComponent={<EmptyState />}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={handleRefresh}
-              colors={['#6C63FF']}
-            />
-          }
-          onEndReached={handleLoadMore}
-          onEndReachedThreshold={0.3}
-          ListFooterComponent={loadingMore ? <Loading /> : null}
-          contentContainerStyle={products.length === 0 && styles.emptyList}
+      <View style={styles.categoriesWrapper}>
+        <CategoryList
+          categories={categories}
+          selectedCategory={selectedCategory}
+          onSelect={handleSelectCategory}
         />
-      )}
+      </View>
+
+      <View style={styles.listWrapper}>
+        {error ? (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>{error}</Text>
+            <TouchableOpacity onPress={() => loadApiProducts(true)}>
+              <Text style={styles.retryText}>Tentar novamente</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <FlatList
+            data={products}
+            keyExtractor={(item) => String(item.id)}
+            renderItem={({ item }) => (
+              <ProductCard
+                product={item}
+                onPress={() => navigation.navigate('ProductDetail', { product: item })}
+              />
+            )}
+            ListEmptyComponent={<EmptyState />}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                colors={['#6C63FF']}
+              />
+            }
+            onEndReached={handleLoadMore}
+            onEndReachedThreshold={0.3}
+            ListFooterComponent={loadingMore ? <Loading /> : null}
+            contentContainerStyle={products.length === 0 && styles.emptyList}
+          />
+        )}
+      </View>
 
       <TouchableOpacity
         style={styles.fab}
@@ -320,34 +314,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E0E0E0',
   },
-  categoriesContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-    gap: 8,
+  categoriesWrapper: {
+    zIndex: 1,
   },
-  categoryChip: {
-    backgroundColor: '#FFF',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    flexShrink: 0,
-    flexGrow: 0,
-    alignSelf: 'flex-start',
-  },
-  categoryChipActive: {
-    backgroundColor: '#6C63FF',
-    borderColor: '#6C63FF',
-  },
-  categoryText: {
-    fontSize: 13,
-    color: '#555',
-    textTransform: 'capitalize',
-  },
-  categoryTextActive: {
-    color: '#FFF',
-    fontWeight: '600',
+  listWrapper: {
+    flex: 1,
   },
   errorContainer: {
     flex: 1,

@@ -40,9 +40,8 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.inner}>
-        <Text style={styles.logo}>📦</Text>
         <Text style={styles.title}>MiniStock</Text>
-        <Text style={styles.subtitle}>Controle de estoque na palma da mão</Text>
+        <Text style={styles.subtitle}>Controle de estoque</Text>
 
         <View style={styles.form}>
           <Text style={styles.label}>Usuário</Text>

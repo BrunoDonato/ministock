@@ -6,6 +6,7 @@ const api = axios.create({
   timeout: 10000,
 });
 
+// Injeta o token em todas as requisições
 api.interceptors.request.use(
   async (config) => {
     try {
@@ -19,6 +20,7 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
+// Tratamento global de erros
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -27,6 +29,10 @@ api.interceptors.response.use(
     }
 
     const { status } = error.response;
+
+    if (status === 400) {
+      return Promise.reject(new Error('Usuário ou senha inválidos'));
+    }
 
     if (status === 401) {
       await AsyncStorage.removeItem('@ministock:token');

@@ -30,6 +30,7 @@ function Routes() {
             component={ProductDetailScreen}
             options={{
               title: 'Detalhes do produto',
+              headerBackTitle: 'Voltar',
               headerStyle: { backgroundColor: '#6C63FF' },
               headerTintColor: '#FFF',
               headerTitleStyle: { fontWeight: '700' },
@@ -40,6 +41,7 @@ function Routes() {
             component={ProductFormScreen}
             options={({ route }) => ({
               title: route.params?.product ? 'Editar produto' : 'Novo produto',
+              headerBackTitle: 'Voltar',
               headerStyle: { backgroundColor: '#6C63FF' },
               headerTintColor: '#FFF',
               headerTitleStyle: { fontWeight: '700' },

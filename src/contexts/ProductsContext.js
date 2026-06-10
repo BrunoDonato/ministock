@@ -5,6 +5,7 @@ const ProductsContext = createContext();
 export function ProductsProvider({ children }) {
   const [localProducts, setLocalProducts] = useState([]);
   const [editedProducts, setEditedProducts] = useState({});
+  const [removedIds, setRemovedIds] = useState([]);
 
   function addProduct(product) {
     const newProduct = { ...product, id: Date.now() };
@@ -29,12 +30,14 @@ export function ProductsProvider({ children }) {
       delete updated[id];
       return updated;
     });
+    setRemovedIds((prev) => [...prev, id]);
   }
 
-  function mergeWithEdits(apiProducts) {
-    return apiProducts.map((p) =>
-      editedProducts[p.id] ? { ...p, ...editedProducts[p.id] } : p
-    );
+  function mergeWithEdits(apiProducts, filterCategory = null) {
+    return apiProducts
+      .filter((p) => !removedIds.includes(p.id))
+      .map((p) => (editedProducts[p.id] ? { ...p, ...editedProducts[p.id] } : p))
+      .filter((p) => !filterCategory || p.category === filterCategory);
   }
 
   return (
